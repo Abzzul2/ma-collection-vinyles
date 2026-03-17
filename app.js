@@ -14,7 +14,7 @@ const CONFIG = {
 // 2. SUPABASE
 const SUPABASE_URL = 'https://vmyfguplxbitmffrexfx.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_iFQwJX4MpLFoNZAYPK7XLg_6o7_vsJN';
-const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // 3. ÉTAT GLOBAL
 let maCollection = []; 
