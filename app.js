@@ -1,80 +1,65 @@
-// ===================================
-// CONFIGURATION
-// ===================================
+// 1. CONFIGURATION
 const CONFIG = {
-    // On récupère le token stocké localement ou on demande à l'utilisateur
     get DISCOGS_TOKEN() {
         let token = localStorage.getItem('discogs_personal_token');
         if (!token) {
-            token = prompt("Veuillez entrer votre jeton (Token) Discogs pour activer la recherche :");
-            if (token) {
-                localStorage.setItem('discogs_personal_token', token);
-            }
+            token = prompt("Veuillez entrer votre jeton Discogs :");
+            if (token) localStorage.setItem('discogs_personal_token', token);
         }
         return token;
     },
-    STORAGE_KEY: "monVinyleCollec",
-    // ... reste de votre config
+    STORAGE_KEY: "monVinyleCollec"
 };
 
-// ===================================
-// ÉTAT GLOBAL
-// ===================================
-let maCollection = JSON.parse(localStorage.getItem(CONFIG.STORAGE_KEY)) || [];
-let currentSort = 'dateDesc'; // Tri par défaut
-let currentFilters = {
-    artiste: 'all',
-    tags: []
-};
+// 2. SUPABASE
+const SUPABASE_URL = 'https://vmyfguplxbitmffrexfx.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_iFQwJX4MpLFoNZAYPK7XLg_6o7_vsJN';
+const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// ===================================
-// INITIALISATION
-// ===================================
-document.addEventListener("DOMContentLoaded", () => {
-    initializePage();
-    setupEventListeners();
-});
+// 3. ÉTAT GLOBAL
+let maCollection = []; 
+let currentSort = 'dateDesc';
+let currentFilters = { artiste: 'all', tags: [] };
 
-/**
- * Initialise la page en fonction de son contexte
- */
-function initializePage() {
+// 4. DÉMARRAGE
+document.addEventListener("DOMContentLoaded", async () => {
+    await chargerCollectionDepuisCloud(); 
+    
+    // Au lieu de initializePage(), on appelle tes fonctions de rendu réelles
     if (document.getElementById("recentCollection")) {
         afficherDashboard();
     }
-    
     if (document.getElementById("fullCollection")) {
         afficherTouteLaCollection();
         afficherStatistiques();
-        initializerControlesCollection();
+        initializerControlesCollection(); // Pour activer les tris/filtres
+    }
+});
+
+// 5. FONCTIONS DE SYNCHRO
+async function chargerCollectionDepuisCloud() {
+    try {
+        const { data, error } = await supabaseClient
+            .from('vinyles')
+            .select('*')
+            .order('created_at', { ascending: false });
+
+        if (error) throw error;
+        
+        maCollection = data.map(v => ({
+            ...v,
+            annee: v.year_release,    // Re-mappage pour ton code existant
+            anneeOriginale: v.year_original,
+            dateAjout: v.created_at || new Date().toISOString()
+        }));
+        console.log("✅ Collection synchronisée avec Supabase !");
+    } catch (error) {
+        console.error("❌ Erreur de chargement:", error.message);
+        // Secours sur le localStorage si le cloud échoue
+        maCollection = JSON.parse(localStorage.getItem(CONFIG.STORAGE_KEY)) || [];
     }
 }
 
-/**
- * Configure les écouteurs d'événements
- */
-function setupEventListeners() {
-    const barcodeInput = document.getElementById("barcodeInput");
-    if (barcodeInput) {
-        // Recherche en appuyant sur Entrée
-        barcodeInput.addEventListener("keypress", (e) => {
-            if (e.key === "Enter") {
-                search();
-            }
-        });
-    }
-}
-
-// ===================================
-// GÉNÉRATION HTML
-// ===================================
-
-/**
- * Génère le HTML d'une carte vinyle
- * @param {Object} data - Données du vinyle
- * @param {string} type - Type de carte ('search' ou 'collection')
- * @returns {string} HTML de la carte
- */
 function genererHTMLCarte(data, type) {
     const titreNettoye = data.titre ? data.titre.split(" – ").pop() : "Titre inconnu";
     const imageUrl = data.image || "https://via.placeholder.com/280x280?text=No+Image";
@@ -274,26 +259,27 @@ async function search() {
  * Ajoute un vinyle à la collection
  * @param {number} id - ID Discogs du vinyle
  */
+
 async function saveToCollection(id) {
-    // Vérifier si déjà dans la collection
+    // 1. Vérifier si déjà dans la collection locale pour éviter les doublons inutiles
     if (maCollection.find(v => v.id === id)) {
         showToast("Ce vinyle est déjà dans votre collection", "error");
         return;
     }
     
     try {
-        // Récupération des détails
+        // 2. Récupération des détails complets sur l'API Discogs
         const response = await fetch(
             `https://api.discogs.com/releases/${id}?token=${CONFIG.DISCOGS_TOKEN}`
         );
         
         if (!response.ok) {
-            throw new Error(`Erreur API: ${response.status}`);
+            throw new Error(`Erreur API Discogs: ${response.status}`);
         }
         
         const res = await response.json();
         
-        // Récupérer l'année originale via le master si disponible
+        // 3. Récupération de l'année originale via le "Master Release"
         let anneeOriginale = null;
         if (res.master_id) {
             try {
@@ -305,33 +291,48 @@ async function saveToCollection(id) {
                     anneeOriginale = master.year;
                 }
             } catch (error) {
-                console.log(`Impossible de récupérer le master pour ${res.master_id}`);
+                console.warn(`Impossible de récupérer l'année originale pour le master ${res.master_id}`);
             }
         }
         
-        // Ajout à la collection
+        // 4. Préparation de l'objet avec la nouvelle nomenclature
         const newItem = {
             id: id,
             titre: res.title,
             artiste: res.artists ? res.artists[0].name : "Inconnu",
-            annee: res.year,
-            anneeOriginale: anneeOriginale,
+            year_release: res.year || null,      // L'année de cette édition précise
+            year_original: anneeOriginale,      // L'année de la 1ère parution mondiale
             image: res.images && res.images.length > 0 ? res.images[0].uri : "",
-            pays: res.country,
+            pays: res.country || "Inconnu",
             label: res.labels && res.labels.length > 0 ? res.labels[0].name : null,
-            dateAjout: new Date().toISOString(),
-            tags: []
+            tags: [] // Initialisé vide, géré ensuite par ouvrirGestionTags
         };
         
-        maCollection.push(newItem);
-        localStorage.setItem(CONFIG.STORAGE_KEY, JSON.stringify(maCollection));
+        // 5. Sauvegarde persistante sur Supabase
+        const { data, error } = await supabase
+            .from('vinyles')
+            .insert([newItem])
+            .select();
+
+        if (error) throw error;
         
-        showToast("✓ Ajouté à la collection !");
-        afficherDashboard();
+        // 6. Mise à jour de l'état local et de l'interface
+        maCollection.push(newItem);
+        
+        // On trie par défaut par ajout récent (le dernier en fin de tableau)
+        showToast("✓ Synchronisé dans le Cloud !");
+        
+        // Rafraîchir l'affichage
+        if (document.getElementById("recentCollection")) {
+            afficherDashboard();
+        }
+        if (document.getElementById("fullCollection")) {
+            afficherTouteLaCollection();
+        }
         
     } catch (error) {
-        console.error("Erreur sauvegarde:", error);
-        showToast("Erreur lors de l'ajout", "error");
+        console.error("Erreur sauvegarde Supabase:", error);
+        showToast("Erreur lors de la synchronisation", "error");
     }
 }
 
@@ -354,21 +355,30 @@ function confirmerSuppression(id) {
  * Supprime un vinyle de la collection
  * @param {number} id - ID du vinyle à supprimer
  */
-function supprimerVinyle(id) {
-    const ancienneTaille = maCollection.length;
-    maCollection = maCollection.filter(v => v.id !== id);
-    
-    if (maCollection.length < ancienneTaille) {
-        localStorage.setItem(CONFIG.STORAGE_KEY, JSON.stringify(maCollection));
-        showToast("Vinyle supprimé de la collection");
+async function supprimerVinyle(id) {
+    try {
+        // 1. Suppression dans la base de données
+        const { error } = await supabase
+            .from('vinyles')
+            .delete()
+            .eq('id', id);
+
+        if (error) throw error;
+
+        // 2. Mise à jour locale si la DB a bien supprimé
+        maCollection = maCollection.filter(v => v.id !== id);
         
-        // Mise à jour des affichages
-        afficherDashboard();
+        // 3. Rafraîchir l'interface
+        if (document.getElementById("recentCollection")) afficherDashboard();
         if (document.getElementById("fullCollection")) {
             afficherTouteLaCollection();
             afficherStatistiques();
-            initializerControlesCollection();
         }
+        
+        showToast("Vinyle supprimé partout !");
+    } catch (error) {
+        console.error("Erreur suppression:", error.message);
+        showToast("Erreur lors de la suppression", "error");
     }
 }
 
