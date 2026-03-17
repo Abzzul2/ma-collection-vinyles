@@ -481,9 +481,10 @@ h2::before {
 }
 
 .empty-state {
+    grid-column: 1 / -1; /* Occupe toute la largeur de la grille */
     text-align: center;
-    padding: 4rem 2rem;
-    color: var(--text-secondary);
+    padding: 40px 0;
+    width: 100%;
 }
 
 .empty-state h3 {

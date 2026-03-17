@@ -143,24 +143,27 @@ async function search() {
     const barcode = barcodeInput.value.trim();
     const resultsDiv = document.getElementById("results");
     
+    // Validation
     if (!barcode) {
         showToast("Veuillez entrer un code-barres", "error");
         barcodeInput.focus();
         return;
     }
-
-    // --- NOUVEAU : Vérification du token avant de lancer ---
+    
+        // --- NOUVEAU : Vérification du token avant de lancer ---
     let token = CONFIG.DISCOGS_TOKEN;
     if (!token) {
         token = CONFIG.demanderNouveauToken();
         if (!token) return; // L'utilisateur a cliqué sur "Annuler"
     }
-    
+
+    // État de chargement
     resultsDiv.innerHTML = '<div class="loading-message">Recherche en cours...</div>';
     
     try {
+        // Recherche via API Discogs (filtre type=release pour les disques uniquement)
         const response = await fetch(
-            `https://api.discogs.com/database/search?barcode=${encodeURIComponent(barcode)}&type=release&token=${token}`
+            `https://api.discogs.com/database/search?barcode=${encodeURIComponent(barcode)}&type=release&token=${CONFIG.DISCOGS_TOKEN}`
         );
         
         // --- NOUVEAU : Si le token est mauvais (Erreur 401) ---
@@ -176,44 +179,100 @@ async function search() {
         if (!response.ok) {
             throw new Error(`Erreur API: ${response.status}`);
         }
-        
+
         const data = await response.json();
         
+        // Aucun résultat
         if (!data.results || data.results.length === 0) {
-            resultsDiv.innerHTML = `<div class="empty-state"><h3>Aucun résultat trouvé</h3></div>`;
+            resultsDiv.innerHTML = `
+                <div class="empty-state">
+                    <h3>Aucun résultat trouvé</h3>
+                    <p>Le code-barres "${escapeHtml(barcode)}" ne correspond à aucun vinyle.</p>
+                </div>`;
             return;
         }
         
+        // Récupération des détails pour chaque résultat
         resultsDiv.innerHTML = "";
-        
-        // La suite de ta logique de récupération des détails (promises, etc.) reste identique
-        const promises = data.results.slice(0, 5).map(async (release) => {
+        const promises = data.results.slice(0, CONFIG.MAX_SEARCH_RESULTS).map(async (release) => {
             try {
-                // Utilise bien le "token" local ici aussi
                 const detailResponse = await fetch(
-                    `https://api.discogs.com/releases/${release.id}?token=${token}`
+                    `https://api.discogs.com/releases/${release.id}?token=${CONFIG.DISCOGS_TOKEN}`
                 );
-                // ... reste du code de mappage ...
+                
+                if (!detailResponse.ok) {
+                    throw new Error(`Erreur détails: ${detailResponse.status}`);
+                }
+                
                 const detail = await detailResponse.json();
                 
-                // (Je raccourcis ici pour la lisibilité, garde ton code de mappage d'origine)
+                // Récupérer l'année originale via le master si disponible
+                let anneeOriginale = null;
+                if (detail.master_id) {
+                    try {
+                        const masterResponse = await fetch(
+                            `https://api.discogs.com/masters/${detail.master_id}?token=${CONFIG.DISCOGS_TOKEN}`
+                        );
+                        if (masterResponse.ok) {
+                            const master = await masterResponse.json();
+                            anneeOriginale = master.year;
+                        }
+                    } catch (error) {
+                        console.log(`Impossible de récupérer le master pour ${detail.master_id}`);
+                    }
+                }
+                
+                // Extraction des matrices (plus complète)
+                const matrices = detail.identifiers
+                    ?.filter(i => i.type === "Matrix / Runout")
+                    .map(i => i.value)
+                    .join(" | ") || "Non spécifiée";
+                
+                // Extraction du label
+                const label = detail.labels && detail.labels.length > 0 
+                    ? detail.labels[0].name 
+                    : null;
+                
                 return {
                     id: release.id,
                     titre: detail.title,
                     artiste: detail.artists ? detail.artists[0].name : "Inconnu",
                     annee: detail.year,
-                    image: detail.images?.[0]?.uri || "",
-                    // ... etc
+                    anneeOriginale: anneeOriginale,
+                    image: detail.images && detail.images.length > 0 ? detail.images[0].uri : "",
+                    matrices: matrices,
+                    pays: detail.country,
+                    label: label
                 };
-            } catch (e) { return null; }
+            } catch (error) {
+                console.error(`Erreur détails pour ${release.id}:`, error);
+                return null;
+            }
         });
         
         const results = await Promise.all(promises);
-        resultsDiv.innerHTML = results.filter(r => r).map(item => genererHTMLCarte(item, 'search')).join("");
+        const validResults = results.filter(r => r !== null);
+        
+        if (validResults.length === 0) {
+            resultsDiv.innerHTML = `
+                <div class="error-message">
+                    Impossible de charger les détails des résultats.
+                </div>`;
+            return;
+        }
+        
+        // Affichage des résultats
+        resultsDiv.innerHTML = validResults
+            .map(item => genererHTMLCarte(item, 'search'))
+            .join("");
             
     } catch (error) {
         console.error("Erreur de recherche:", error);
-        resultsDiv.innerHTML = `<div class="error-message">❌ Erreur de connexion.</div>`;
+        resultsDiv.innerHTML = `
+            <div class="error-message">
+                ❌ Erreur de connexion à Discogs. Veuillez réessayer.
+            </div>`;
+        showToast("Erreur de connexion", "error");
     }
 }
 
