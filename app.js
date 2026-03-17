@@ -905,51 +905,64 @@ async function toggleScanner() {
     if (scannerContainer.style.display === 'none' || !scannerContainer.style.display) {
         scannerContainer.style.display = 'block';
         
-        if (window.scannerInstance) {
-            try { await window.scannerInstance.clear(); } catch(e) {}
-        }
+        Quagga.init({
+            inputStream: {
+                name: "Live",
+                type: "LiveStream",
+                target: scannerContainer,
+                constraints: {
+                    width: 640,
+                    height: 480,
+                    facingMode: "environment"
+                }
+            },
+            decoder: {
+                readers: [
+                    "ean_reader",      // EAN-13 et EAN-8
+                    "ean_8_reader",
+                    "code_128_reader", // CODE-128
+                    "upc_reader"       // UPC (USA)
+                ]
+            },
+            locate: true,
+            locator: {
+                patchSize: "medium",
+                halfSample: true
+            }
+        }, function(err) {
+            if (err) {
+                console.error("Erreur init Quagga:", err);
+                showToast("Erreur caméra : " + err.message, "error");
+                scannerContainer.style.display = 'none';
+                return;
+            }
+            Quagga.start();
+            showToast("Scanner activé - Stabilisez le code-barres", "info");
+        });
 
-        const html5QrCode = new Html5Qrcode("reader");
-        window.scannerInstance = html5QrCode;
-
-        const config = { 
-            fps: 15, 
-            qrbox: { width: 300, height: 150 }, // Légèrement plus large pour les codes 1D
-            aspectRatio: 1.0,
-            // On active les formats codes-barres standard
-            formatsToSupport: [ 
-                Html5QrcodeSupportedFormats.EAN_13, 
-                Html5QrcodeSupportedFormats.EAN_8, 
-                Html5QrcodeSupportedFormats.CODE_128 
-            ]
-        };
-
-        try {
-            await html5QrCode.start(
-                { facingMode: "environment" }, 
-                config,
-                (decodedText) => {
-                    document.getElementById('barcodeInput').value = decodedText;
-                    stopScanner();
-                    if (typeof search === "function") search(); 
-                },
-                undefined // Ignorer les erreurs de lecture silencieuses
-            );
-        } catch (err) {
-            console.error("Erreur détaillée:", err);
-            showToast("Erreur caméra : Vérifiez HTTPS et les permissions.", "error");
-            scannerContainer.style.display = 'none';
-        }
+        // Détection du code-barres
+        Quagga.onDetected(function(result) {
+            const code = result.codeResult.code;
+            console.log("Code scanné:", code);
+            
+            document.getElementById('barcodeInput').value = code;
+            stopScanner();
+            
+            if (typeof search === "function") search();
+        });
+        
     } else {
         stopScanner();
     }
 }
 
 function stopScanner() {
-    if (window.scannerInstance) {
-        window.scannerInstance.stop().then(() => {
-            document.getElementById('reader').style.display = 'none';
-        });
+    Quagga.stop();
+    const scannerContainer = document.getElementById('reader');
+    if (scannerContainer) {
+        scannerContainer.style.display = 'none';
+        // Nettoyer le contenu vidéo
+        scannerContainer.innerHTML = '';
     }
 }
 
