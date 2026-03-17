@@ -898,36 +898,97 @@ function showToast(message, type = "success") {
 /**
  * Initialise et lance le scanner de caméra
  */
-async function toggleScanner() {
+function toggleScanner() {
+    // Sur mobile, utiliser l'input caméra natif
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    
+    if (isMobile) {
+        useMobileCameraCapture();
+    } else {
+        // Sur PC, garder Quagga avec stream vidéo
+        useDesktopScanner();
+    }
+}
+
+// Solution mobile : capture photo native
+function useMobileCameraCapture() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.capture = 'environment'; // Active la caméra arrière
+    
+    input.onchange = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        
+        showToast("Analyse de l'image...", "info");
+        
+        const reader = new FileReader();
+        reader.onload = function(event) {
+            // Décoder l'image avec Quagga
+            Quagga.decodeSingle({
+                src: event.target.result,
+                numOfWorkers: 0,
+                inputStream: {
+                    size: 800 // Taille de traitement
+                },
+                decoder: {
+                    readers: [
+                        "ean_reader",
+                        "ean_8_reader", 
+                        "code_128_reader",
+                        "upc_reader"
+                    ]
+                },
+                locate: true,
+                locator: {
+                    patchSize: "medium",
+                    halfSample: true
+                }
+            }, function(result) {
+                if (result && result.codeResult && result.codeResult.code) {
+                    const code = result.codeResult.code;
+                    console.log("Code détecté:", code);
+                    
+                    document.getElementById('barcodeInput').value = code;
+                    showToast("Code-barres scanné : " + code, "success");
+                    
+                    if (typeof search === "function") {
+                        search();
+                    }
+                } else {
+                    showToast("Code-barres non détecté. Réessayez avec une meilleure lumière.", "error");
+                }
+            });
+        };
+        
+        reader.onerror = function() {
+            showToast("Erreur de lecture de l'image", "error");
+        };
+        
+        reader.readAsDataURL(file);
+    };
+    
+    input.click();
+}
+
+// Solution desktop : stream vidéo Quagga
+function useDesktopScanner() {
     const scannerContainer = document.getElementById('reader');
     if (!scannerContainer) return;
 
     if (scannerContainer.style.display === 'none' || !scannerContainer.style.display) {
         scannerContainer.style.display = 'block';
         
-        // Vérifier si on est sur iOS/Safari
-        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-        const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
-        
-        console.log("Device:", { isIOS, isSafari, userAgent: navigator.userAgent });
-        
-        // Configuration Quagga optimisée pour iOS
-        const config = {
+        Quagga.init({
             inputStream: {
                 name: "Live",
                 type: "LiveStream",
                 target: scannerContainer,
                 constraints: {
-                    width: { min: 640, ideal: 1280, max: 1920 },
-                    height: { min: 480, ideal: 720, max: 1080 },
-                    facingMode: "environment",
-                    aspectRatio: { ideal: 1.7777777778 }
-                },
-                area: { // Zone de scan
-                    top: "20%",
-                    right: "10%",
-                    left: "10%",
-                    bottom: "20%"
+                    width: 640,
+                    height: 480,
+                    facingMode: "environment"
                 }
             },
             decoder: {
@@ -936,61 +997,25 @@ async function toggleScanner() {
                     "ean_8_reader",
                     "code_128_reader",
                     "upc_reader"
-                ],
-                debug: {
-                    drawBoundingBox: true,
-                    showFrequency: true,
-                    drawScanline: true,
-                    showPattern: true
-                },
-                multiple: false
+                ]
             },
-            locate: true,
-            locator: {
-                patchSize: "medium",
-                halfSample: true
-            },
-            frequency: 10,
-            numOfWorkers: isIOS ? 2 : 4 // Moins de workers sur iOS
-        };
-
-        Quagga.init(config, function(err) {
+            locate: true
+        }, function(err) {
             if (err) {
                 console.error("Erreur Quagga:", err);
-                
-                // Messages d'erreur spécifiques
-                if (err.name === 'NotAllowedError') {
-                    showToast("Autorisez l'accès à la caméra dans les réglages Safari", "error");
-                } else if (err.name === 'NotFoundError') {
-                    showToast("Aucune caméra trouvée", "error");
-                } else if (err.name === 'NotReadableError') {
-                    showToast("Caméra déjà utilisée par une autre app", "error");
-                } else {
-                    showToast("Erreur caméra: " + err.message, "error");
-                }
-                
+                showToast("Erreur caméra : " + err.message, "error");
                 scannerContainer.style.display = 'none';
                 return;
             }
-            
-            console.log("Quagga initialisé avec succès");
             Quagga.start();
-            showToast("Scanner activé - Centrez le code-barres", "info");
+            showToast("Scanner activé", "info");
         });
 
-        // Événement de détection
         Quagga.onDetected(function(result) {
-            if (result.codeResult.code) {
-                const code = result.codeResult.code;
-                console.log("Code détecté:", code);
-                
-                document.getElementById('barcodeInput').value = code;
-                stopScanner();
-                
-                if (typeof search === "function") {
-                    search();
-                }
-            }
+            const code = result.codeResult.code;
+            document.getElementById('barcodeInput').value = code;
+            stopScanner();
+            if (typeof search === "function") search();
         });
         
     } else {
@@ -1010,7 +1035,6 @@ function stopScanner() {
         scannerContainer.innerHTML = '';
     }
 }
-
 /**
  * Exporte la collection au format CSV
  */
