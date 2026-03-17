@@ -898,143 +898,73 @@ function showToast(message, type = "success") {
 /**
  * Initialise et lance le scanner de caméra
  */
-function toggleScanner() {
-    // Sur mobile, utiliser l'input caméra natif
-    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-    
-    if (isMobile) {
-        useMobileCameraCapture();
-    } else {
-        // Sur PC, garder Quagga avec stream vidéo
-        useDesktopScanner();
-    }
-}
-
-// Solution mobile : capture photo native
-function useMobileCameraCapture() {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = 'image/*';
-    input.capture = 'environment'; // Active la caméra arrière
-    
-    input.onchange = async (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-        
-        showToast("Analyse de l'image...", "info");
-        
-        const reader = new FileReader();
-        reader.onload = function(event) {
-            // Décoder l'image avec Quagga
-            Quagga.decodeSingle({
-                src: event.target.result,
-                numOfWorkers: 0,
-                inputStream: {
-                    size: 800 // Taille de traitement
-                },
-                decoder: {
-                    readers: [
-                        "ean_reader",
-                        "ean_8_reader", 
-                        "code_128_reader",
-                        "upc_reader"
-                    ]
-                },
-                locate: true,
-                locator: {
-                    patchSize: "medium",
-                    halfSample: true
-                }
-            }, function(result) {
-                if (result && result.codeResult && result.codeResult.code) {
-                    const code = result.codeResult.code;
-                    console.log("Code détecté:", code);
-                    
-                    document.getElementById('barcodeInput').value = code;
-                    showToast("Code-barres scanné : " + code, "success");
-                    
-                    if (typeof search === "function") {
-                        search();
-                    }
-                } else {
-                    showToast("Code-barres non détecté. Réessayez avec une meilleure lumière.", "error");
-                }
-            });
-        };
-        
-        reader.onerror = function() {
-            showToast("Erreur de lecture de l'image", "error");
-        };
-        
-        reader.readAsDataURL(file);
-    };
-    
-    input.click();
-}
-
-// Solution desktop : stream vidéo Quagga
-function useDesktopScanner() {
+async function toggleScanner() {
     const scannerContainer = document.getElementById('reader');
     if (!scannerContainer) return;
 
     if (scannerContainer.style.display === 'none' || !scannerContainer.style.display) {
         scannerContainer.style.display = 'block';
-        
-        Quagga.init({
-            inputStream: {
-                name: "Live",
-                type: "LiveStream",
-                target: scannerContainer,
-                constraints: {
-                    width: 640,
-                    height: 480,
-                    facingMode: "environment"
-                }
-            },
-            decoder: {
-                readers: [
-                    "ean_reader",
-                    "ean_8_reader",
-                    "code_128_reader",
-                    "upc_reader"
-                ]
-            },
-            locate: true
-        }, function(err) {
-            if (err) {
-                console.error("Erreur Quagga:", err);
-                showToast("Erreur caméra : " + err.message, "error");
-                scannerContainer.style.display = 'none';
-                return;
-            }
-            Quagga.start();
-            showToast("Scanner activé", "info");
-        });
 
-        Quagga.onDetected(function(result) {
-            const code = result.codeResult.code;
-            document.getElementById('barcodeInput').value = code;
-            stopScanner();
-            if (typeof search === "function") search();
-        });
-        
+        if (window.scannerInstance) {
+            try { await window.scannerInstance.clear(); } catch(e) {}
+        }
+
+        const html5QrCode = new Html5Qrcode("reader");
+        window.scannerInstance = html5QrCode;
+
+        // Vérification défensive : utilise les valeurs numériques brutes si
+        // Html5QrcodeSupportedFormats n'est pas disponible dans ce contexte
+        const formats = (typeof Html5QrcodeSupportedFormats !== 'undefined')
+            ? [
+                Html5QrcodeSupportedFormats.EAN_13,
+                Html5QrcodeSupportedFormats.EAN_8,
+                Html5QrcodeSupportedFormats.CODE_128,
+                Html5QrcodeSupportedFormats.QR_CODE   // garder QR en bonus
+              ]
+            : [0, 4, 6, 11]; // valeurs numériques de secours (selon la lib)
+
+        const config = {
+            fps: 15,
+            qrbox: { width: 350, height: 100 }, // rectangle horizontal pour les codes 1D
+            aspectRatio: 1.7,                    // plus adapté aux codes-barres
+            formatsToSupport: formats,
+            experimentalFeatures: {
+                useBarCodeDetectorIfSupported: true  // ← clé pour les codes 1D sur mobile
+            }
+        };
+
+        try {
+            await html5QrCode.start(
+                { facingMode: "environment" },
+                config,
+                (decodedText) => {
+                    document.getElementById('barcodeInput').value = decodedText;
+                    stopScanner();
+                    if (typeof search === "function") search();
+                },
+                undefined
+            );
+        } catch (err) {
+            console.error("Erreur détaillée:", err);
+            showToast("Erreur caméra : Vérifiez HTTPS et les permissions.", "error");
+            scannerContainer.style.display = 'none';
+        }
     } else {
         stopScanner();
     }
 }
 
 function stopScanner() {
-    if (typeof Quagga !== 'undefined') {
-        Quagga.offDetected();
-        Quagga.stop();
-    }
-    
-    const scannerContainer = document.getElementById('reader');
-    if (scannerContainer) {
-        scannerContainer.style.display = 'none';
-        scannerContainer.innerHTML = '';
+    if (window.scannerInstance) {
+        window.scannerInstance.stop()
+            .then(() => {
+                document.getElementById('reader').style.display = 'none';
+                window.scannerInstance = null; // ← évite les conflits lors d'une réouverture
+            })
+            .catch(err => console.warn("Stop scanner:", err));
     }
 }
+
 /**
  * Exporte la collection au format CSV
  */

@@ -1112,21 +1112,3 @@ h2::before {
 .export-btn:hover {
     background-color: #e0e0e0;
 }
-
-#reader {
-    position: relative;
-    width: 100%;
-    max-width: 640px;
-    margin: 0 auto;
-}
-
-#reader video {
-    width: 100%;
-    height: auto;
-}
-
-#reader canvas {
-    position: absolute;
-    top: 0;
-    left: 0;
-}
