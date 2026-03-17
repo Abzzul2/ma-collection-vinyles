@@ -14,7 +14,7 @@ const CONFIG = {
 // 2. SUPABASE
 const SUPABASE_URL = 'https://vmyfguplxbitmffrexfx.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_iFQwJX4MpLFoNZAYPK7XLg_6o7_vsJN';
-const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // 3. ÉTAT GLOBAL
 let maCollection = []; 
@@ -309,7 +309,7 @@ async function saveToCollection(id) {
         };
         
         // 5. Sauvegarde persistante sur Supabase
-        const { data, error } = await supabase
+        const { data, error } = await supabaseClient
             .from('vinyles')
             .insert([newItem])
             .select();
@@ -358,7 +358,7 @@ function confirmerSuppression(id) {
 async function supprimerVinyle(id) {
     try {
         // 1. Suppression dans la base de données
-        const { error } = await supabase
+        const { error } = await supabaseClient
             .from('vinyles')
             .delete()
             .eq('id', id);
