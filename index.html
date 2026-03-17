@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Scanner et gérer votre collection de vinyles avec Discogs">
+    <title>Ma Collection Vinyles - Scanner</title>
+    
+    <!-- Polices Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+    
+    <!-- Styles -->
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <!-- En-tête -->
+        <header>
+            <h1>🎵 Scanner Vinyles</h1>
+        </header>
+        
+        
+        <!-- Zone de recherche -->
+
+        <div class="search-container">
+            <div class="input-wrapper">
+                <input 
+                    type="text"
+                    id="barcodeInput" 
+                    placeholder="Scanner ou taper un code-barres...">
+                
+                <button class="camera-btn" onclick="toggleScanner()" title="Scanner avec la caméra">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"></path><circle cx="12" cy="13" r="3"></circle></svg>
+                </button>
+                
+                <button class="search-btn" onclick="search()" title="Rechercher">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                </button>
+            </div>
+        </div>
+           
+        </div>
+
+        <div id="reader-container">
+            <div id="reader" style="display:none;"></div>
+        </div>
+        
+        <!-- Résultats de recherche -->
+        <section id="results" class="grid" aria-live="polite"></section>
+        
+        <!-- Derniers ajoutés -->
+        <section>
+            <h2>Derniers ajoutés</h2>
+            <div id="recentCollection" class="grid"></div>
+        </section>
+        
+        <!-- Lien vers la collection complète -->
+        <div style="text-align: center; margin-top: 3rem;">
+            <a href="collection.html" class="view-collection-link">
+                Voir toute la collection →
+            </a>
+        </div>
+    </div>
+    
+    <!-- Scripts -->
+    <script src="app.js"></script>
+</body>
+</html>
