@@ -905,40 +905,39 @@ async function toggleScanner() {
     if (scannerContainer.style.display === 'none' || !scannerContainer.style.display) {
         scannerContainer.style.display = 'block';
         
-        // On s'assure que l'instance est propre
         if (window.scannerInstance) {
-            await window.scannerInstance.clear();
+            try { await window.scannerInstance.clear(); } catch(e) {}
         }
 
         const html5QrCode = new Html5Qrcode("reader");
         window.scannerInstance = html5QrCode;
 
-        // Configuration optimisée pour mobile
         const config = { 
-            fps: 10, 
-            qrbox: { width: 250, height: 150 },
-            aspectRatio: 1.0 // Aide certains navigateurs mobiles à cadrer
+            fps: 15, 
+            qrbox: { width: 300, height: 150 }, // Légèrement plus large pour les codes 1D
+            aspectRatio: 1.0,
+            // On active les formats codes-barres standard
+            formatsToSupport: [ 
+                Html5QrcodeSupportedFormats.EAN_13, 
+                Html5QrcodeSupportedFormats.EAN_8, 
+                Html5QrcodeSupportedFormats.CODE_128 
+            ]
         };
 
         try {
-            // On force l'utilisation de la caméra arrière avec facingMode
             await html5QrCode.start(
                 { facingMode: "environment" }, 
                 config,
                 (decodedText) => {
                     document.getElementById('barcodeInput').value = decodedText;
                     stopScanner();
-                    search(); 
-                }
+                    if (typeof search === "function") search(); 
+                },
+                undefined // Ignorer les erreurs de lecture silencieuses
             );
         } catch (err) {
-            console.error("Erreur caméra détaillée:", err);
-            // Si l'erreur est liée aux permissions
-            if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
-                showToast("Accès caméra refusé. Vérifiez les réglages du site.", "error");
-            } else {
-                showToast("Erreur caméra : Vérifiez que vous êtes en HTTPS", "error");
-            }
+            console.error("Erreur détaillée:", err);
+            showToast("Erreur caméra : Vérifiez HTTPS et les permissions.", "error");
             scannerContainer.style.display = 'none';
         }
     } else {
