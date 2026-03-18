@@ -905,64 +905,61 @@ async function toggleScanner() {
     if (scannerContainer.style.display === 'none' || !scannerContainer.style.display) {
         scannerContainer.style.display = 'block';
 
-        if (window.scannerInstance) {
-            try { await window.scannerInstance.clear(); } catch(e) {}
-        }
-
-        const html5QrCode = new Html5Qrcode("reader");
-        window.scannerInstance = html5QrCode;
-
-        // Vérification défensive : utilise les valeurs numériques brutes si
-        // Html5QrcodeSupportedFormats n'est pas disponible dans ce contexte
-        const formats = (typeof Html5QrcodeSupportedFormats !== 'undefined')
-            ? [
-                Html5QrcodeSupportedFormats.EAN_13,
-                Html5QrcodeSupportedFormats.EAN_8,
-                Html5QrcodeSupportedFormats.CODE_128,
-                Html5QrcodeSupportedFormats.QR_CODE   // garder QR en bonus
-              ]
-            : [0, 4, 6, 11]; // valeurs numériques de secours (selon la lib)
-
-        const config = {
-            fps: 15,
-            qrbox: { width: 350, height: 100 }, // rectangle horizontal pour les codes 1D
-            aspectRatio: 1.7,                    // plus adapté aux codes-barres
-            formatsToSupport: formats,
-            experimentalFeatures: {
-                useBarCodeDetectorIfSupported: true  // ← clé pour les codes 1D sur mobile
+        Quagga.init({
+            inputStream: {
+                name: "Live",
+                type: "LiveStream",
+                target: scannerContainer,
+                constraints: {
+                    facingMode: "environment",
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 }
+                }
+            },
+            decoder: {
+                readers: [
+                    "ean_reader",       // EAN-13
+                    "ean_8_reader",     // EAN-8
+                    "code_128_reader",  // CODE 128
+                    "upc_reader"        // UPC-A
+                ],
+                multiple: false
+            },
+            locate: true // détecte automatiquement la position du code
+        }, (err) => {
+            if (err) {
+                console.error("Quagga init error:", err);
+                showToast("Erreur caméra : Vérifiez HTTPS et les permissions.", "error");
+                scannerContainer.style.display = 'none';
+                return;
             }
-        };
+            Quagga.start();
+        });
 
-        try {
-            await html5QrCode.start(
-                { facingMode: "environment" },
-                config,
-                (decodedText) => {
-                    document.getElementById('barcodeInput').value = decodedText;
-                    stopScanner();
-                    if (typeof search === "function") search();
-                },
-                undefined
-            );
-        } catch (err) {
-            console.error("Erreur détaillée:", err);
-            showToast("Erreur caméra : Vérifiez HTTPS et les permissions.", "error");
-            scannerContainer.style.display = 'none';
-        }
+        // Déclenche uniquement quand la lecture est fiable (score > 0.7)
+        Quagga.onDetected((result) => {
+            const code = result.codeResult.code;
+            const confidence = result.codeResult.decodedCodes
+                .filter(c => c.error !== undefined)
+                .reduce((acc, c) => acc + (1 - c.error), 0) /
+                result.codeResult.decodedCodes.filter(c => c.error !== undefined).length;
+
+            if (confidence > 0.7) {
+                document.getElementById('barcodeInput').value = code;
+                stopScanner();
+                if (typeof search === "function") search();
+            }
+        });
+
     } else {
         stopScanner();
     }
 }
 
 function stopScanner() {
-    if (window.scannerInstance) {
-        window.scannerInstance.stop()
-            .then(() => {
-                document.getElementById('reader').style.display = 'none';
-                window.scannerInstance = null; // ← évite les conflits lors d'une réouverture
-            })
-            .catch(err => console.warn("Stop scanner:", err));
-    }
+    Quagga.stop();
+    const scannerContainer = document.getElementById('reader');
+    if (scannerContainer) scannerContainer.style.display = 'none';
 }
 
 /**
